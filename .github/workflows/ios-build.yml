@@ -1,0 +1,71 @@
+name: iOS build (unsigned)
+
+# Builds an UNSIGNED .ipa on a GitHub-hosted macOS runner. AltStore/SideStore
+# signs it on the owner's iPhone with the owner's free Apple ID.
+# The .ipa is a short-lived workflow artifact for the owner's own device. It is
+# intentionally not published as a GitHub Release.
+
+on:
+  workflow_dispatch:
+    inputs:
+      configuration:
+        description: "Debug = development client (loads JS from your PC). Release = standalone app."
+        type: choice
+        options: [Debug, Release]
+        default: Debug
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-build-${{ github.ref }}-${{ inputs.configuration }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 60
+    env:
+      CONFIGURATION: ${{ inputs.configuration }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Select newest installed Xcode
+        run: |
+          XCODE="$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)"
+          sudo xcode-select -s "$XCODE"
+          xcodebuild -version
+
+      - name: Generate native iOS project (runs pod install)
+        run: npx expo prebuild --platform ios --clean
+
+      - name: Archive (unsigned)
+        run: |
+          set -o pipefail
+          WORKSPACE="$(ls -d ios/*.xcworkspace | head -1)"
+          SCHEME="$(basename "$WORKSPACE" .xcworkspace)"
+          FORMAT="cat"
+          if command -v xcbeautify >/dev/null; then FORMAT="xcbeautify --renderer github-actions"; fi
+          xcodebuild archive \
+            -workspace "$WORKSPACE" -scheme "$SCHEME" -configuration "$CONFIGURATION" \
+            -sdk iphoneos -destination 'generic/platform=iOS' \
+            -archivePath build/App.xcarchive \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            | $FORMAT
+
+      - name: Package .ipa
+        run: bash scripts/ci/package-ipa.sh build/App.xcarchive "build/Fuel-${CONFIGURATION}.ipa"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Fuel-${{ inputs.configuration }}-${{ github.run_number }}
+          path: build/Fuel-${{ inputs.configuration }}.ipa
+          retention-days: 7
+          if-no-files-found: error

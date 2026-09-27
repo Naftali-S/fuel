@@ -1,0 +1,61 @@
+{
+  "expo": {
+    "name": "Fuel",
+    "slug": "fuel",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "fuel",
+    "userInterfaceStyle": "automatic",
+    "platforms": ["ios", "web"],
+    "ios": {
+      "bundleIdentifier": "io.github.naftalis.fuel",
+      "supportsTablet": false,
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "web": {
+      "output": "single",
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#050A14",
+          "image": "./assets/images/splash-icon.png",
+          "imageWidth": 120
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "deploymentTarget": "26.0"
+          }
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Fuel uses the camera to scan food barcodes and nutrition labels.",
+          "recordAudioAndroid": false
+        }
+      ],
+      [
+        "@kingstinct/react-native-healthkit",
+        {
+          "NSHealthShareUsageDescription": "Fuel reads your body weight and step count to estimate your energy expenditure.",
+          "NSHealthUpdateUsageDescription": "Fuel can save your logged nutrition to Apple Health.",
+          "background": false
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    }
+  }
+}
