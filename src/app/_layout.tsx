@@ -26,6 +26,8 @@ export default function RootLayout() {
             <Stack.Screen name="log-food" options={{ presentation: 'modal', title: 'Log food' }} />
             <Stack.Screen name="food-editor" options={{ presentation: 'modal', title: 'Your food' }} />
             <Stack.Screen name="recipe-editor" options={{ presentation: 'modal', title: 'Recipe' }} />
+            <Stack.Screen name="profile" options={{ presentation: 'modal', title: 'Profile' }} />
+            <Stack.Screen name="estimate-food" options={{ presentation: 'modal', title: 'Fill in nutrients' }} />
           </Stack>
         </CatalogProvider>
       </DatabaseProvider>

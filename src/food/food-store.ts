@@ -51,8 +51,14 @@ export async function saveFood(db: SqlDriver, food: FoodRecord, now = new Date()
         )
       ).lastInsertRowId;
     }
+    const estimated = new Set(food.estimated ?? []);
     for (const [nutrientId, amount] of Object.entries(food.nutrients)) {
-      await tx.run('INSERT INTO food_nutrients (food_id, nutrient_id, amount) VALUES (?, ?, ?)', [id, nutrientId, amount]);
+      await tx.run('INSERT INTO food_nutrients (food_id, nutrient_id, amount, is_estimate) VALUES (?, ?, ?, ?)', [
+        id,
+        nutrientId,
+        amount,
+        estimated.has(nutrientId) ? 1 : 0,
+      ]);
     }
     for (const [i, s] of food.servings.entries()) {
       await tx.run('INSERT INTO servings (food_id, label, amount, is_default) VALUES (?, ?, ?, ?)', [
@@ -81,10 +87,11 @@ interface FoodRow {
 }
 
 async function hydrate(db: SqlDriver, row: FoodRow): Promise<StoredFood> {
-  const nutrients = await db.all<{ nutrient_id: string; amount: number }>(
-    'SELECT nutrient_id, amount FROM food_nutrients WHERE food_id = ?',
+  const nutrients = await db.all<{ nutrient_id: string; amount: number; is_estimate: number }>(
+    'SELECT nutrient_id, amount, is_estimate FROM food_nutrients WHERE food_id = ?',
     [row.id],
   );
+  const estimated = nutrients.filter((n) => n.is_estimate).map((n) => n.nutrient_id);
   const servings = await db.all<{ label: string; amount: number }>(
     'SELECT label, amount FROM servings WHERE food_id = ? ORDER BY is_default DESC, id',
     [row.id],
@@ -104,6 +111,7 @@ async function hydrate(db: SqlDriver, row: FoodRow): Promise<StoredFood> {
     servings,
     barcodes: barcodes.map((b) => b.gtin),
     microCompleteness: row.micro_completeness ?? 0,
+    ...(estimated.length > 0 && { estimated }),
   };
 }
 

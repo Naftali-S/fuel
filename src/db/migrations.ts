@@ -7,6 +7,8 @@
  * ISO 8601 UTC strings, food nutrient amounts are per 100 g (or 100 mL when
  * `basis` = 'ml'), JSON columns hold JSON text.
  */
+import { DAILY_VALUES } from '@/nutrition/reference-values';
+
 import type { SqlDriver } from './driver';
 import { NUTRIENTS } from './nutrient-catalog';
 
@@ -214,6 +216,15 @@ export const MIGRATIONS: readonly Migration[] = [
           servings REAL CHECK (servings > 0)
         );
       `);
+    },
+  },
+  {
+    // Health Canada Daily Values (verified against the official 2022 table).
+    version: 3,
+    async up(tx) {
+      for (const [id, dv] of Object.entries(DAILY_VALUES)) {
+        await tx.run('UPDATE nutrients SET daily_value = ? WHERE id = ?', [dv, id]);
+      }
     },
   },
 ];

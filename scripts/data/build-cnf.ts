@@ -15,6 +15,7 @@ import { openNodeDriver } from '../../src/db/testing/node-sqlite-driver';
 import { CNF_NUTRIENTS, microCompleteness } from '../../src/food/nutrient-mapping';
 import { createReferenceSchema, finalizeReference, insertReferenceFood } from '../../src/food/reference-db';
 import type { FoodRecord, Serving } from '../../src/food/types';
+import { plausibleServings } from './cnf-servings';
 import { parseCsvRecords } from './csv';
 
 const CNF_URL =
@@ -85,7 +86,9 @@ async function main() {
       region: 'CA',
       basis: 'g',
       nutrients: n,
-      servings: (servings.get(r.FoodID) ?? []).sort((a, b) => a.amount - b.amount).slice(0, MAX_SERVINGS),
+      servings: plausibleServings(servings.get(r.FoodID) ?? [])
+        .sort((a, b) => a.amount - b.amount)
+        .slice(0, MAX_SERVINGS),
       barcodes: [],
       microCompleteness: microCompleteness(n),
     });

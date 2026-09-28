@@ -1,5 +1,5 @@
-import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useCallback, useRef, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/button';
@@ -9,6 +9,7 @@ import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useDatabase } from '@/db/database-provider';
 import { NUTRIENTS } from '@/db/nutrient-catalog';
+import { DAILY_VALUES } from '@/nutrition/reference-values';
 import { localIsoDate } from '@/engine/dates';
 import { getFood, type StoredFood } from '@/food/food-store';
 import { parseDecimal } from '@/food/label';
@@ -50,47 +51,55 @@ export default function LogFoodScreen() {
   const [showAll, setShowAll] = useState(false);
   const date = data?.entry?.date ?? params.date ?? localIsoDate(new Date());
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      if (params.entryId) {
-        const entry = await getEntry(db, Number(params.entryId));
-        if (!entry) throw new Error('That entry no longer exists.');
-        const food = entry.foodId ? await getFood(db, entry.foodId) : null;
-        const own: Portion = { label: entry.servingLabel ?? `${entry.amount} ${entry.unit}`, amount: entry.servingAmount ?? entry.amount };
-        const portions = food ? portionsFor(food) : [];
-        let idx = portions.findIndex((p) => p.label === own.label && p.amount === own.amount);
-        if (idx < 0) {
-          portions.unshift(own);
-          idx = 0;
+  // Reload on focus so estimates added in "Fill in nutrients" show immediately;
+  // the user's portion, amount and meal are only initialised on the first load.
+  const initialised = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      (async () => {
+        if (params.entryId) {
+          const entry = await getEntry(db, Number(params.entryId));
+          if (!entry) throw new Error('That entry no longer exists.');
+          const food = entry.foodId ? await getFood(db, entry.foodId) : null;
+          const own: Portion = { label: entry.servingLabel ?? `${entry.amount} ${entry.unit}`, amount: entry.servingAmount ?? entry.amount };
+          const portions = food ? portionsFor(food) : [];
+          let idx = portions.findIndex((p) => p.label === own.label && p.amount === own.amount);
+          if (idx < 0) {
+            portions.unshift(own);
+            idx = 0;
+          }
+          const per100 = Object.fromEntries(Object.entries(entry.nutrients).map(([k, v]) => [k, (v * 100) / entry.amount]));
+          if (cancelled) return;
+          setData({ food, entry, portions, per100, basis: entry.unit, name: entry.foodName });
+          if (!initialised.current) {
+            setPortionIdx(idx);
+            setQtyText(String(entry.quantity ?? 1));
+            setMeal(entry.meal);
+          }
+        } else {
+          const food = await getFood(db, Number(params.foodId));
+          if (!food) throw new Error('That food no longer exists.');
+          if (cancelled) return;
+          setData({
+            food,
+            entry: null,
+            portions: portionsFor(food),
+            per100: food.nutrients,
+            basis: food.basis,
+            name: food.brand ? `${food.name} (${food.brand})` : food.name,
+          });
         }
-        const per100 = Object.fromEntries(Object.entries(entry.nutrients).map(([k, v]) => [k, (v * 100) / entry.amount]));
-        if (cancelled) return;
-        setData({ food, entry, portions, per100, basis: entry.unit, name: entry.foodName });
-        setPortionIdx(idx);
-        setQtyText(String(entry.quantity ?? 1));
-        setMeal(entry.meal);
-      } else {
-        const food = await getFood(db, Number(params.foodId));
-        if (!food) throw new Error('That food no longer exists.');
-        if (cancelled) return;
-        setData({
-          food,
-          entry: null,
-          portions: portionsFor(food),
-          per100: food.nutrients,
-          basis: food.basis,
-          name: food.brand ? `${food.name} (${food.brand})` : food.name,
-        });
-      }
-    })().catch((e) => {
-      Alert.alert('Couldn’t open', e instanceof Error ? e.message : String(e));
-      router.back();
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [db, params.entryId, params.foodId]);
+        initialised.current = true;
+      })().catch((e) => {
+        Alert.alert('Couldn’t open', e instanceof Error ? e.message : String(e));
+        router.back();
+      });
+      return () => {
+        cancelled = true;
+      };
+    }, [db, params.entryId, params.foodId]),
+  );
 
   if (!data) return <ThemedView style={styles.fill} />;
 
@@ -179,14 +188,28 @@ export default function LogFoodScreen() {
         </ThemedText>
         <TextButton label={showAll ? 'Hide nutrients' : 'Show all nutrients'} onPress={() => setShowAll((v) => !v)} />
         {showAll &&
-          NUTRIENTS.filter((d) => n[d.id] !== undefined).map((d) => (
-            <View key={d.id} style={styles.row}>
-              <ThemedText type="small">{d.name}</ThemedText>
-              <ThemedText type="small">
-                {fmt(n[d.id], 2)} {d.unit}
-              </ThemedText>
-            </View>
-          ))}
+          NUTRIENTS.filter((d) => n[d.id] !== undefined).map((d) => {
+            const dv = DAILY_VALUES[d.id];
+            const estimated = data.food?.estimated?.includes(d.id);
+            return (
+              <View key={d.id} style={styles.row}>
+                <ThemedText type="small">
+                  {d.name}
+                  {estimated ? ' (est.)' : ''}
+                </ThemedText>
+                <ThemedText type="small">
+                  {fmt(n[d.id], 2)} {d.unit === 'mcg' ? 'µg' : d.unit}
+                  {dv ? `  ${Math.round((n[d.id] / dv) * 100)}% DV` : ''}
+                </ThemedText>
+              </View>
+            );
+          })}
+        {data.food && (
+          <ThemedText type="small" themeColor="textSecondary">
+            Micronutrient data: {Math.round(data.food.microCompleteness * 100)}%
+            {data.food.estimated?.length ? ` (${data.food.estimated.length} estimated)` : ''}
+          </ThemedText>
+        )}
       </ThemedView>
 
       <Button label={data.entry ? 'Save changes' : `Add to ${MEAL_LABELS[meal]}`} disabled={!valid} onPress={save} />
@@ -194,6 +217,12 @@ export default function LogFoodScreen() {
         {(data.food?.source === 'user' || data.food?.source === 'recipe') && <TextButton label="Edit this food" onPress={editFood} />}
         {data.entry && <TextButton label="Delete entry" danger onPress={remove} />}
       </View>
+      {data.food && data.food.source !== 'cnf' && data.food.source !== 'recipe' && (
+        <TextButton
+          label={data.food.estimated?.length ? 'Change estimated nutrients' : 'Fill in missing nutrients'}
+          onPress={() => router.push({ pathname: '/estimate-food', params: { foodId: String(data.food!.id) } })}
+        />
+      )}
     </ScrollView>
   );
 }

@@ -7,6 +7,7 @@ import { Accent, Spacing } from '@/constants/theme';
 import { NUTRIENTS } from '@/db/nutrient-catalog';
 import type { FoodOrigin } from '@/food/catalog';
 import { portionLabel, portionsFor, scaleNutrients } from '@/food/portion';
+import { DAILY_VALUES } from '@/nutrition/reference-values';
 import type { FoodRecord } from '@/food/types';
 
 const ORIGIN_LABEL: Record<FoodOrigin, string> = {
@@ -81,9 +82,13 @@ export function FoodCard({ food, origin }: { food: FoodRecord; origin: FoodOrigi
         <View style={styles.table}>
           {NUTRIENTS.filter((d) => n[d.id] !== undefined).map((d) => (
             <View key={d.id} style={styles.row}>
-              <ThemedText type="small">{d.name}</ThemedText>
               <ThemedText type="small">
-                {fmt(n[d.id], 2)} {d.unit}
+                {d.name}
+                {food.estimated?.includes(d.id) ? ' (est.)' : ''}
+              </ThemedText>
+              <ThemedText type="small">
+                {fmt(n[d.id], 2)} {d.unit === 'mcg' ? 'µg' : d.unit}
+                {DAILY_VALUES[d.id] ? `  ${Math.round((n[d.id] / DAILY_VALUES[d.id]) * 100)}% DV` : ''}
               </ThemedText>
             </View>
           ))}

@@ -28,4 +28,6 @@ export interface FoodRecord {
   barcodes: string[];
   /** 0–1 share of the core micronutrients that have values. */
   microCompleteness: number;
+  /** Nutrient ids whose values are estimates filled in from a similar food. */
+  estimated?: string[];
 }
