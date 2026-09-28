@@ -7,7 +7,10 @@
     "icon": "./assets/images/icon.png",
     "scheme": "fuel",
     "userInterfaceStyle": "automatic",
-    "platforms": ["ios", "web"],
+    "platforms": [
+      "ios",
+      "web"
+    ],
     "ios": {
       "bundleIdentifier": "io.github.naftalis.fuel",
       "supportsTablet": false,
@@ -51,7 +54,9 @@
           "NSHealthUpdateUsageDescription": "Fuel can save your logged nutrition to Apple Health.",
           "background": false
         }
-      ]
+      ],
+      "expo-sqlite",
+      "expo-sharing"
     ],
     "experiments": {
       "typedRoutes": true,

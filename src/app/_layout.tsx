@@ -3,6 +3,8 @@ import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 import { useColorScheme } from 'react-native';
 
+import { DatabaseProvider } from '@/db/database-provider';
+
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
@@ -14,10 +16,12 @@ export default function RootLayout() {
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="scan" options={{ presentation: 'modal', title: 'Scan barcode' }} />
-      </Stack>
+      <DatabaseProvider>
+        <Stack>
+          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen name="scan" options={{ presentation: 'modal', title: 'Scan barcode' }} />
+        </Stack>
+      </DatabaseProvider>
     </ThemeProvider>
   );
 }

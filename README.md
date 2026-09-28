@@ -7,7 +7,8 @@ A personal, local-first nutrition coach for iPhone. It is being built to:
 - use lifting data from Hevy (via its official API) as a training signal,
 - adjust calorie and macro targets weekly toward the user's goal.
 
-> **Status:** Phase 0: build pipeline and on-device checks (barcode scanner, Apple Health).
+> **Status:** Phase 1: on-device database, backup export/import, and the tested
+> calculation engine ([how it works](docs/ENGINE.md)). Food logging comes next.
 
 Fuel is an independent personal project. It is not affiliated with or endorsed by
 any other nutrition or fitness app, Hevy, Apple, Health Canada, Open Food Facts or
