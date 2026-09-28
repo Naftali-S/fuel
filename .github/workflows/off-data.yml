@@ -1,0 +1,46 @@
+name: Open Food Facts Canada data
+
+# Builds the Canadian subset of Open Food Facts and publishes it as the
+# `off-ca` release, under the Open Database License (ODbL), as the licence
+# requires for a public Derivative Database. The app downloads it on request.
+
+on:
+  schedule:
+    - cron: '17 7 3 * *' # monthly, 3rd day, 07:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: off-data
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build off-ca.db
+        run: npm run data:off-ca -- --out build/off-ca.db --manifest build/off-ca.json
+
+      - name: Publish release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view off-ca >/dev/null 2>&1; then
+            gh release create off-ca --title "Open Food Facts – Canada subset" \
+              --notes-file scripts/data/OFF_RELEASE_NOTES.md --latest=false
+          fi
+          gh release edit off-ca --notes-file scripts/data/OFF_RELEASE_NOTES.md --latest=false
+          gh release upload off-ca build/off-ca.db build/off-ca.json --clobber
+          cat build/off-ca.json >> "$GITHUB_STEP_SUMMARY"

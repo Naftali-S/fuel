@@ -7,8 +7,12 @@ A personal, local-first nutrition coach for iPhone. It is being built to:
 - use lifting data from Hevy (via its official API) as a training signal,
 - adjust calorie and macro targets weekly toward the user's goal.
 
-> **Status:** Phase 1: on-device database, backup export/import, and the tested
+> **Status:** Phase 2: Canadian food library (Canadian Nutrient File built in,
+> Open Food Facts Canada download, live barcode lookup) on top of the tested
 > calculation engine ([how it works](docs/ENGINE.md)). Food logging comes next.
+>
+> Rebuild the bundled food data with `npm run data:cnf`. The Open Food Facts
+> Canada file is built by the monthly "Open Food Facts Canada data" workflow.
 
 Fuel is an independent personal project. It is not affiliated with or endorsed by
 any other nutrition or fitness app, Hevy, Apple, Health Canada, Open Food Facts or

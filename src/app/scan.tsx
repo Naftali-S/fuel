@@ -3,27 +3,40 @@ import { useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/button';
+import { FoodCard } from '@/components/food-card';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
-import { normalizeBarcode, type NormalizedBarcode } from '@/lib/barcode';
+import { lookupBarcode, type BarcodeLookup } from '@/food/catalog';
+import { useCatalog } from '@/food/catalog-provider';
 
-type ScanResult = { raw: string; type: string; normalized: NormalizedBarcode };
+type ScanState = { raw: string; lookup: BarcodeLookup | null };
+
+const INVALID_TEXT: Record<Extract<BarcodeLookup, { status: 'invalid' }>['reason'], string> = {
+  empty: 'The scan was empty.',
+  'non-numeric': 'That code isn’t a product barcode.',
+  'bad-length': 'That code isn’t a product barcode.',
+  'bad-check-digit': 'The barcode didn’t read cleanly. Try again.',
+  'bad-upce': 'The barcode didn’t read cleanly. Try again.',
+};
 
 export default function ScanScreen() {
   const [permission, requestPermission] = useCameraPermissions();
-  const [result, setResult] = useState<ScanResult | null>(null);
+  const { catalog } = useCatalog();
+  const [scan, setScan] = useState<ScanState | null>(null);
   // The camera fires many callbacks per second; only the first one per scan counts.
   const locked = useRef(false);
 
-  const onScanned = ({ data, type }: BarcodeScanningResult) => {
+  const onScanned = async ({ data, type }: BarcodeScanningResult) => {
     if (locked.current) return;
     locked.current = true;
-    setResult({ raw: data, type, normalized: normalizeBarcode(data, type) });
+    setScan({ raw: data, lookup: null });
+    const lookup = await lookupBarcode(catalog, data, type);
+    setScan({ raw: data, lookup });
   };
 
   const scanAgain = () => {
-    setResult(null);
+    setScan(null);
     locked.current = false;
   };
 
@@ -38,28 +51,33 @@ export default function ScanScreen() {
     );
   }
 
+  const lookup = scan?.lookup;
   return (
     <View style={styles.fill}>
       <CameraView
         style={StyleSheet.absoluteFill}
         facing="back"
         barcodeScannerSettings={{ barcodeTypes: ['ean13', 'ean8', 'upc_a', 'upc_e'] }}
-        onBarcodeScanned={result ? undefined : onScanned}
+        onBarcodeScanned={scan ? undefined : onScanned}
       />
       <View pointerEvents="none" style={styles.reticleWrap}>
         <View style={styles.reticle} />
       </View>
-      {result && (
-        <ThemedView type="backgroundElement" style={styles.sheet}>
-          <ThemedText type="smallBold">Scanned {result.type}</ThemedText>
-          <ThemedText type="code">raw: {result.raw}</ThemedText>
-          {result.normalized.ok ? (
-            <ThemedText type="code">
-              GTIN: {result.normalized.gtin} · lookup keys: {result.normalized.candidates.join(', ')}
+      {scan && (
+        <ThemedView style={styles.sheet}>
+          {!lookup && <ThemedText type="small">Looking up {scan.raw}…</ThemedText>}
+          {lookup?.status === 'found' && <FoodCard food={lookup.hit.food} origin={lookup.hit.origin} />}
+          {lookup?.status === 'not-found' && (
+            <ThemedText type="small">
+              No match for {lookup.gtin} in Canadian data or Open Food Facts. Adding your own foods comes next.
             </ThemedText>
-          ) : (
-            <ThemedText type="code">rejected: {result.normalized.reason}</ThemedText>
           )}
+          {lookup?.status === 'error' && (
+            <ThemedText type="small">
+              Couldn’t look up {lookup.gtin}: {lookup.message}
+            </ThemedText>
+          )}
+          {lookup?.status === 'invalid' && <ThemedText type="small">{INVALID_TEXT[lookup.reason]}</ThemedText>}
           <Button label="Scan again" onPress={scanAgain} />
         </ThemedView>
       )}

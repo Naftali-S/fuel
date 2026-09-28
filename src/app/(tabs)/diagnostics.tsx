@@ -1,6 +1,6 @@
 import Constants from 'expo-constants';
 import * as Device from 'expo-device';
-import { router, useFocusEffect } from 'expo-router';
+import { Link, router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Alert, Platform, ScrollView, StyleSheet } from 'react-native';
 
@@ -14,6 +14,75 @@ import type { SqlDriver } from '@/db/driver';
 import { schemaVersion } from '@/db/migrations';
 import { pickBackup, shareBackup } from '@/features/backup/backup-file';
 import { runHealthProbe, type HealthProbeResult } from '@/features/health/health-probe';
+import { useCatalog } from '@/food/catalog-provider';
+
+function FoodLibraryCard() {
+  const { cnfFoods, offCa, progress, error, downloadOffCa, removeOffCa, fetchOffCaManifest } = useCatalog();
+
+  const confirmDownload = async () => {
+    try {
+      const m = await fetchOffCaManifest();
+      const mb = (m.bytes / 1_048_576).toFixed(0);
+      Alert.alert(
+        'Download Canadian products?',
+        `${m.foods.toLocaleString()} products from Open Food Facts (${m.version}), about ${mb} MB. Use Wi-Fi if you can.`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Download', onPress: () => void downloadOffCa() },
+        ],
+      );
+    } catch (e) {
+      Alert.alert('Not available', errorMessage(e));
+    }
+  };
+
+  const confirmRemove = () =>
+    Alert.alert('Remove Canadian products?', 'Frees the space. Foods you already scanned stay saved.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Remove', style: 'destructive', onPress: () => void removeOffCa() },
+    ]);
+
+  return (
+    <ThemedView type="backgroundElement" style={styles.card}>
+      <ThemedText type="smallBold">Food library</ThemedText>
+      <ThemedText type="small" themeColor="textSecondary">
+        {cnfFoods === null ? 'Opening…' : `${cnfFoods.toLocaleString()} generic foods (Canadian Nutrient File 2015)`}
+      </ThemedText>
+      <ThemedText type="small" themeColor="textSecondary">
+        {offCa
+          ? `${offCa.foods.toLocaleString()} Canadian products (Open Food Facts, ${offCa.version})`
+          : 'Canadian products not downloaded. Scans are looked up online instead.'}
+      </ThemedText>
+      {progress !== null && <ThemedText type="small">Downloading… {Math.round(progress * 100)}%</ThemedText>}
+      {error && <ThemedText type="small">{error}</ThemedText>}
+      <Button label="Search foods" onPress={() => router.push('/food-search')} />
+      {offCa ? (
+        <Button label="Remove Canadian products" disabled={progress !== null} onPress={confirmRemove} />
+      ) : (
+        <Button
+          label={progress === null ? 'Download Canadian products' : 'Downloading…'}
+          disabled={progress !== null}
+          onPress={confirmDownload}
+        />
+      )}
+      <ThemedText type="small" themeColor="textSecondary">
+        Contains information licensed under the{' '}
+        <Link href="https://open.canada.ca/en/open-government-licence-canada" style={styles.link}>
+          Open Government Licence – Canada
+        </Link>
+        . Contains data from{' '}
+        <Link href="https://world.openfoodfacts.org" style={styles.link}>
+          Open Food Facts
+        </Link>
+        , available under the{' '}
+        <Link href="https://opendatacommons.org/licenses/odbl/1-0/" style={styles.link}>
+          Open Database License
+        </Link>
+        . Not affiliated with or endorsed by Health Canada or Open Food Facts.
+      </ThemedText>
+    </ThemedView>
+  );
+}
 
 interface DbStats {
   version: number;
@@ -124,10 +193,12 @@ export default function DiagnosticsScreen() {
       <ThemedView type="backgroundElement" style={styles.card}>
         <ThemedText type="smallBold">Barcode scanner</ThemedText>
         <ThemedText type="small" themeColor="textSecondary">
-          Scan any packaged food. The raw code and its normalized GTIN are shown.
+          Scan any packaged food to look it up: Canadian products first, then Open Food Facts online.
         </ThemedText>
         <Button label="Open scanner" onPress={() => router.push('/scan')} />
       </ThemedView>
+
+      <FoodLibraryCard />
 
       <ThemedView type="backgroundElement" style={styles.card}>
         <ThemedText type="smallBold">Apple Health</ThemedText>
@@ -164,5 +235,8 @@ const styles = StyleSheet.create({
     padding: Spacing.three,
     borderRadius: Spacing.three,
     gap: Spacing.two,
+  },
+  link: {
+    textDecorationLine: 'underline',
   },
 });

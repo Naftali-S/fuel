@@ -10,6 +10,28 @@ user owns. Nothing here implies endorsement by any data provider.
 | [USDA FoodData Central](https://fdc.nal.usda.gov) | Fallback for products missing from Canadian sources (flagged as US data) | Public domain ([CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/)) | "U.S. Department of Agriculture, Agricultural Research Service. FoodData Central." |
 | Health Canada [Table of Daily Values](https://www.canada.ca/en/health-canada/services/food-nutrition/nutrition-labelling/regulations-compliance.html) and [Dietary Reference Intakes](https://www.canada.ca/en/health-canada/services/food-nutrition/healthy-eating/dietary-reference-intakes.html) | %DV and micronutrient targets | Published reference values (facts); cited, not copied as documents | Cited in the app's nutrient info screens. |
 
+## How each source is used
+
+- **Canadian Nutrient File 2015.**
+  - `scripts/data/build-cnf.ts` converts Health Canada's CSV release into
+    `assets/data/cnf.db`, which ships inside the app.
+  - Nutrient values are copied as published. Only the nutrients Fuel tracks are
+    kept, and the measures become serving sizes.
+- **Open Food Facts, Canada subset.**
+  - `scripts/data/build-off-ca.ts`, run monthly by `.github/workflows/off-data.yml`,
+    filters the official export to products tagged Canada.
+  - The result is a Derivative Database, published openly under the ODbL as the
+    [`off-ca` release](https://github.com/Naftali-S/fuel/releases/tag/off-ca),
+    with the same attribution.
+  - The app downloads it only when the user asks.
+- **Open Food Facts, live lookups.**
+  - One API request per scan, following OFF's API usage rules.
+  - The request identifies the app with its name, version and repository URL,
+    never the user.
+  - Results are cached on the device.
+- **Attribution.** The app shows the attribution statements above, with links, on
+  the Diagnostics screen (and later on the food library screens).
+
 ## User-owned data
 
 - **Hevy**: the user's own workout history, read through Hevy's official public

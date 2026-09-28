@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { useColorScheme } from 'react-native';
 
 import { DatabaseProvider } from '@/db/database-provider';
+import { CatalogProvider } from '@/food/catalog-provider';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -17,10 +18,13 @@ export default function RootLayout() {
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <DatabaseProvider>
-        <Stack>
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          <Stack.Screen name="scan" options={{ presentation: 'modal', title: 'Scan barcode' }} />
-        </Stack>
+        <CatalogProvider>
+          <Stack>
+            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+            <Stack.Screen name="scan" options={{ presentation: 'modal', title: 'Scan barcode' }} />
+            <Stack.Screen name="food-search" options={{ presentation: 'modal', title: 'Search foods' }} />
+          </Stack>
+        </CatalogProvider>
       </DatabaseProvider>
     </ThemeProvider>
   );
