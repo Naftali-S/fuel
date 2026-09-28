@@ -1,7 +1,7 @@
 import { migrate } from '@/db/migrations';
 import { openMemoryDriver, type TestDriver } from '@/db/testing/node-sqlite-driver';
 
-import { lookupBarcode, searchFoods, type Catalog } from './catalog';
+import { ensureSaved, lookupBarcode, searchFoods, searchUsda, type Catalog } from './catalog';
 import { getFood, saveFood } from './food-store';
 import {
   createReferenceSchema,
@@ -45,9 +45,21 @@ afterEach(() => opened.splice(0).forEach((d) => d.close()));
 
 describe('ftsQuery', () => {
   it('quotes each word as a required prefix and drops operators', () => {
-    expect(ftsQuery('Greek yogurt')).toBe('"greek"* "yogurt"*');
+    expect(ftsQuery('Greek yogurt')).toBe('"greek"* ("yogurt"* OR "yogourt"* OR "yoghurt"*)');
     expect(ftsQuery('milk OR "x" NEAR(y) -z*')).toBe('"milk"* "or"* "x"* "near"* "y"* "z"*');
+    expect(ftsQuery('rolled oats', 'OR')).toBe('"rolled"* OR "oats"*');
     expect(ftsQuery('  ,.;  ')).toBeNull();
+  });
+});
+
+describe('search fallbacks', () => {
+  it('finds CNF spellings and falls back to any-word matches', async () => {
+    const db = await referenceDb([
+      food({ sourceId: '1', name: 'Yogourt, plain, 2% M.F.' }),
+      food({ sourceId: '2', name: 'Grains, oats' }),
+    ]);
+    expect((await searchReference(db, 'yogurt')).map((f) => f.name)).toEqual(['Yogourt, plain, 2% M.F.']);
+    expect((await searchReference(db, 'rolled oats')).map((f) => f.name)).toEqual(['Grains, oats']);
   });
 });
 
@@ -146,6 +158,27 @@ describe('catalog', () => {
       gtin: '0077544827004',
       message: 'offline',
     });
+  });
+
+  it('falls back to USDA after Open Food Facts, even if OFF is offline', async () => {
+    const us = { ...cereal, source: 'usda' as const, sourceId: '777', region: 'US' as const };
+    const usda = { search: jest.fn(async () => [us]), byGtin: jest.fn(async () => us) };
+    const offline = async () => {
+      throw new Error('offline');
+    };
+    const c: Catalog = { main: await mainDb(), fetchOffProduct: offline, usda };
+    const r = await lookupBarcode(c, '0077544827004');
+    expect(r).toMatchObject({ status: 'found', hit: { origin: 'usda', food: { region: 'US' } } });
+    expect(await searchUsda(c, 'cereal')).toEqual([{ origin: 'usda', food: us }]);
+    expect(await searchUsda({ main: c.main }, 'cereal')).toEqual([]);
+  });
+
+  it('saves a reference hit before logging, once', async () => {
+    const main = await mainDb();
+    const c: Catalog = { main };
+    const id = await ensureSaved(c, { origin: 'cnf', food: food({ name: 'Oats' }) });
+    expect(await ensureSaved(c, { origin: 'cnf', food: food({ name: 'Oats' }) })).toBe(id);
+    expect(await ensureSaved(c, { origin: 'mine', food: food({}), foodId: 42 })).toBe(42);
   });
 
   it('updates a cached food in place when saved again', async () => {

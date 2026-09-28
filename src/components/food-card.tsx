@@ -14,6 +14,7 @@ const ORIGIN_LABEL: Record<FoodOrigin, string> = {
   cnf: 'Canadian Nutrient File',
   'off-ca': 'Open Food Facts',
   'off-live': 'Open Food Facts',
+  usda: 'USDA FoodData Central',
 };
 
 function regionBadge(food: FoodRecord): string {

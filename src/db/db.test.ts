@@ -1,6 +1,6 @@
 import { BackupError, exportBackup, importBackup, parseBackup, type Backup } from './backup';
 import type { SqlDriver } from './driver';
-import { migrate, SCHEMA_VERSION, schemaVersion } from './migrations';
+import { migrate, MIGRATIONS, SCHEMA_VERSION, schemaVersion } from './migrations';
 import { NUTRIENTS } from './nutrient-catalog';
 import { openMemoryDriver, type TestDriver } from './testing/node-sqlite-driver';
 
@@ -54,6 +54,27 @@ describe('migrate', () => {
     await expect(
       db.run(`INSERT INTO food_nutrients (food_id, nutrient_id, amount) VALUES (999, 'energy_kcal', 1)`),
     ).rejects.toThrow();
+  });
+
+  it('upgrades an existing v1 database without losing entries', async () => {
+    const old = openMemoryDriver();
+    await old.exec('PRAGMA foreign_keys = ON');
+    await old.transaction(async (tx) => {
+      await MIGRATIONS[0].up(tx);
+      await tx.exec('PRAGMA user_version = 1');
+    });
+    await old.run(
+      `INSERT INTO log_entries (date, meal, food_name, amount, nutrients, created_at)
+       VALUES ('2026-09-01', 'lunch', 'Soup', 250, '{}', ?)`,
+      [NOW],
+    );
+    expect(await migrate(old)).toBe(SCHEMA_VERSION);
+    expect(await old.get('SELECT food_name, unit, quantity FROM log_entries')).toEqual({
+      food_name: 'Soup',
+      unit: 'g',
+      quantity: null,
+    });
+    old.close();
   });
 
   it('refuses a database from a newer app version', async () => {

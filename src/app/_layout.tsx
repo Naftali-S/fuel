@@ -22,7 +22,10 @@ export default function RootLayout() {
           <Stack>
             <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
             <Stack.Screen name="scan" options={{ presentation: 'modal', title: 'Scan barcode' }} />
-            <Stack.Screen name="food-search" options={{ presentation: 'modal', title: 'Search foods' }} />
+            <Stack.Screen name="add-food" options={{ presentation: 'modal', title: 'Add food' }} />
+            <Stack.Screen name="log-food" options={{ presentation: 'modal', title: 'Log food' }} />
+            <Stack.Screen name="food-editor" options={{ presentation: 'modal', title: 'Your food' }} />
+            <Stack.Screen name="recipe-editor" options={{ presentation: 'modal', title: 'Recipe' }} />
           </Stack>
         </CatalogProvider>
       </DatabaseProvider>

@@ -1,14 +1,17 @@
 import { CameraView, useCameraPermissions, type BarcodeScanningResult } from 'expo-camera';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useRef, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Alert, StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/button';
 import { FoodCard } from '@/components/food-card';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
-import { lookupBarcode, type BarcodeLookup } from '@/food/catalog';
+import { localIsoDate } from '@/engine/dates';
+import { ensureSaved, lookupBarcode, type BarcodeLookup, type FoodHit } from '@/food/catalog';
 import { useCatalog } from '@/food/catalog-provider';
+import { isMeal, MEAL_LABELS, mealForTime } from '@/log/log-store';
 
 type ScanState = { raw: string; lookup: BarcodeLookup | null };
 
@@ -23,6 +26,9 @@ const INVALID_TEXT: Record<Extract<BarcodeLookup, { status: 'invalid' }>['reason
 export default function ScanScreen() {
   const [permission, requestPermission] = useCameraPermissions();
   const { catalog } = useCatalog();
+  const params = useLocalSearchParams<{ date?: string; meal?: string }>();
+  const date = params.date ?? localIsoDate(new Date());
+  const meal = isMeal(params.meal) ? params.meal : mealForTime(new Date());
   const [scan, setScan] = useState<ScanState | null>(null);
   // The camera fires many callbacks per second; only the first one per scan counts.
   const locked = useRef(false);
@@ -39,6 +45,17 @@ export default function ScanScreen() {
     setScan(null);
     locked.current = false;
   };
+
+  const logIt = async (hit: FoodHit) => {
+    try {
+      const foodId = await ensureSaved(catalog, hit);
+      router.replace({ pathname: '/log-food', params: { foodId: String(foodId), date, meal } });
+    } catch (e) {
+      Alert.alert('Couldn’t open that food', e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const enterLabel = (gtin: string) => router.replace({ pathname: '/food-editor', params: { barcode: gtin, date, meal } });
 
   if (!permission) return <ThemedView style={styles.fill} />;
 
@@ -66,16 +83,25 @@ export default function ScanScreen() {
       {scan && (
         <ThemedView style={styles.sheet}>
           {!lookup && <ThemedText type="small">Looking up {scan.raw}…</ThemedText>}
-          {lookup?.status === 'found' && <FoodCard food={lookup.hit.food} origin={lookup.hit.origin} />}
+          {lookup?.status === 'found' && (
+            <>
+              <FoodCard food={lookup.hit.food} origin={lookup.hit.origin} />
+              <Button label={`Log this (${MEAL_LABELS[meal]})`} onPress={() => logIt(lookup.hit)} />
+            </>
+          )}
           {lookup?.status === 'not-found' && (
-            <ThemedText type="small">
-              No match for {lookup.gtin} in Canadian data or Open Food Facts. Adding your own foods comes next.
-            </ThemedText>
+            <>
+              <ThemedText type="small">No match for {lookup.gtin}. You can enter it from the label once, and it’s saved for next time.</ThemedText>
+              <Button label="Enter it from the label" onPress={() => enterLabel(lookup.gtin)} />
+            </>
           )}
           {lookup?.status === 'error' && (
-            <ThemedText type="small">
-              Couldn’t look up {lookup.gtin}: {lookup.message}
-            </ThemedText>
+            <>
+              <ThemedText type="small">
+                Couldn’t look up {lookup.gtin}: {lookup.message}
+              </ThemedText>
+              <Button label="Enter it from the label" onPress={() => enterLabel(lookup.gtin)} />
+            </>
           )}
           {lookup?.status === 'invalid' && <ThemedText type="small">{INVALID_TEXT[lookup.reason]}</ThemedText>}
           <Button label="Scan again" onPress={scanAgain} />

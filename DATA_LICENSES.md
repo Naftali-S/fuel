@@ -29,6 +29,12 @@ user owns. Nothing here implies endorsement by any data provider.
   - The request identifies the app with its name, version and repository URL,
     never the user.
   - Results are cached on the device.
+- **USDA FoodData Central.**
+  - Used only when you search the US database, or as the last barcode fallback.
+    It needs your own free API key.
+  - The key is sent in a request header and stored in the iOS Keychain. It is
+    never put in URLs, the database or backups.
+  - Results are labelled "US data" and cached on the device.
 - **Attribution.** The app shows the attribution statements above, with links, on
   the Diagnostics screen (and later on the food library screens).
 

@@ -5,6 +5,7 @@ import { useCallback, useState } from 'react';
 import { Alert, Platform, ScrollView, StyleSheet } from 'react-native';
 
 import { Button } from '@/components/button';
+import { Field } from '@/components/form';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
@@ -15,6 +16,52 @@ import { schemaVersion } from '@/db/migrations';
 import { pickBackup, shareBackup } from '@/features/backup/backup-file';
 import { runHealthProbe, type HealthProbeResult } from '@/features/health/health-probe';
 import { useCatalog } from '@/food/catalog-provider';
+
+function UsdaCard() {
+  const { hasUsdaKey, saveUsdaKey } = useCatalog();
+  const [key, setKey] = useState('');
+
+  const save = async (value: string | null) => {
+    try {
+      await saveUsdaKey(value);
+      setKey('');
+    } catch (e) {
+      Alert.alert('Couldn’t save the key', errorMessage(e));
+    }
+  };
+
+  return (
+    <ThemedView type="backgroundElement" style={styles.card}>
+      <ThemedText type="smallBold">US foods (USDA FoodData Central)</ThemedText>
+      <ThemedText type="small" themeColor="textSecondary">
+        Optional fallback, labelled as US data. Get a free key at{' '}
+        <Link href="https://fdc.nal.usda.gov/api-key-signup" style={styles.link}>
+          fdc.nal.usda.gov
+        </Link>
+        . The key stays in this iPhone’s Keychain and is never included in backups.
+      </ThemedText>
+      {hasUsdaKey ? (
+        <Button label="Remove USDA key" onPress={() => save(null)} />
+      ) : (
+        <>
+          <Field
+            label="API key"
+            value={key}
+            onChangeText={setKey}
+            secureTextEntry
+            autoCapitalize="none"
+            autoCorrect={false}
+            placeholder="Paste your key"
+          />
+          <Button label="Save key" disabled={!key.trim()} onPress={() => save(key)} />
+        </>
+      )}
+      <ThemedText type="small" themeColor="textSecondary">
+        U.S. Department of Agriculture, Agricultural Research Service. FoodData Central (public domain).
+      </ThemedText>
+    </ThemedView>
+  );
+}
 
 function FoodLibraryCard() {
   const { cnfFoods, offCa, progress, error, downloadOffCa, removeOffCa, fetchOffCaManifest } = useCatalog();
@@ -55,7 +102,7 @@ function FoodLibraryCard() {
       </ThemedText>
       {progress !== null && <ThemedText type="small">Downloading… {Math.round(progress * 100)}%</ThemedText>}
       {error && <ThemedText type="small">{error}</ThemedText>}
-      <Button label="Search foods" onPress={() => router.push('/food-search')} />
+      <Button label="Search foods" onPress={() => router.push('/add-food')} />
       {offCa ? (
         <Button label="Remove Canadian products" disabled={progress !== null} onPress={confirmRemove} />
       ) : (
@@ -199,6 +246,8 @@ export default function DiagnosticsScreen() {
       </ThemedView>
 
       <FoodLibraryCard />
+
+      <UsdaCard />
 
       <ThemedView type="backgroundElement" style={styles.card}>
         <ThemedText type="smallBold">Apple Health</ThemedText>

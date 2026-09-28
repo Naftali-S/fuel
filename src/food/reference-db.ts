@@ -89,14 +89,46 @@ export async function referenceMeta(db: SqlDriver): Promise<Record<string, strin
  * Turns free text into a safe FTS5 query: each word becomes a quoted
  * prefix term, all required. Returns null when nothing searchable remains.
  */
-export function ftsQuery(input: string): string | null {
+export function ftsQuery(input: string, join: 'AND' | 'OR' = 'AND'): string | null {
   const words = searchWords(input);
-  return words.length ? words.map((w) => `"${w}"*`).join(' ') : null;
+  if (!words.length) return null;
+  const terms = words.map((w) => {
+    const alts = [w, ...(SYNONYMS[w] ?? [])].map((a) => `"${a}"*`);
+    return alts.length > 1 ? `(${alts.join(' OR ')})` : alts[0];
+  });
+  return terms.join(join === 'AND' ? ' ' : ' OR ');
 }
 
 function searchWords(input: string): string[] {
   return (input.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []).slice(0, 8);
 }
+
+/**
+ * Spelling and naming variants: Canadian/US/UK spellings and the terms the
+ * Canadian Nutrient File uses ("yogourt", "oats" for oatmeal).
+ */
+const SYNONYMS: Readonly<Record<string, readonly string[]>> = {
+  yogurt: ['yogourt', 'yoghurt'],
+  yoghurt: ['yogourt', 'yogurt'],
+  yogourt: ['yogurt'],
+  oatmeal: ['oats'],
+  oat: ['oats'],
+  fiber: ['fibre'],
+  fibre: ['fiber'],
+  chickpea: ['chickpeas', 'garbanzo'],
+  chickpeas: ['garbanzo'],
+  garbanzo: ['chickpeas'],
+  zucchini: ['squash'],
+  eggplant: ['aubergine'],
+  cilantro: ['coriander'],
+  scallion: ['onions'],
+  ketchup: ['catsup'],
+  donut: ['doughnut', 'doughnuts'],
+  doughnut: ['donut'],
+  hamburger: ['burger', 'ground'],
+  pop: ['soda', 'carbonated'],
+  soda: ['carbonated'],
+};
 
 interface FoodRow {
   source: string;
@@ -136,10 +168,23 @@ function rowToFood(row: FoodRow): FoodRecord {
  * ("Egg, chicken, whole" before "Bagel, egg"), as do popular products.
  */
 export async function searchReference(db: SqlDriver, query: string, limit = 25): Promise<FoodRecord[]> {
-  const match = ftsQuery(query);
-  if (!match) return [];
+  const strict = ftsQuery(query);
+  if (!strict) return [];
+  const rows = await rankedSearch(db, query, strict, limit);
+  // Too few matches for every word ("rolled oats" vs "Grains, oats"): add any-word matches.
+  if (rows.length < Math.min(5, limit) && searchWords(query).length > 1) {
+    const seen = new Set(rows.map((r) => r.source_id));
+    for (const r of await rankedSearch(db, query, ftsQuery(query, 'OR')!, limit)) {
+      if (rows.length >= limit) break;
+      if (!seen.has(r.source_id)) rows.push(r);
+    }
+  }
+  return rows.map(rowToFood);
+}
+
+async function rankedSearch(db: SqlDriver, query: string, match: string, limit: number): Promise<FoodRow[]> {
   const first = searchWords(query)[0]; // letters/digits only: safe inside LIKE
-  const rows = await db.all<FoodRow>(
+  return db.all<FoodRow>(
     `SELECT f.* FROM foods_fts
        JOIN foods f ON f.id = foods_fts.rowid
       WHERE foods_fts MATCH ?
@@ -153,7 +198,6 @@ export async function searchReference(db: SqlDriver, query: string, limit = 25):
     // otherwise the name starts with it.
     [match, first, `${first}s`, `${first},%`, `${first}s,%`, `${first},%`, `${first}s,%`, `${first}%`, limit],
   );
-  return rows.map(rowToFood);
 }
 
 export async function referenceByBarcode(db: SqlDriver, candidates: readonly string[]): Promise<FoodRecord | null> {

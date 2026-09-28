@@ -17,6 +17,7 @@ export const BACKUP_TABLES = [
   'food_nutrients',
   'servings',
   'recipe_items',
+  'recipes',
   'log_entries',
   'day_status',
   'weights',

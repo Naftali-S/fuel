@@ -10,6 +10,11 @@ export interface StoredFood extends FoodRecord {
   id: number;
 }
 
+/** Unique id for foods created on this device ("user-…", "recipe-…"). */
+export function newSourceId(prefix: 'user' | 'recipe'): string {
+  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 /** Inserts or updates a food by (source, sourceId). Returns its id. */
 export async function saveFood(db: SqlDriver, food: FoodRecord, now = new Date()): Promise<number> {
   const ts = now.toISOString();
@@ -128,9 +133,14 @@ export async function searchMyFoods(db: SqlDriver, query: string, limit = 10): P
     const like = `%${w.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
     return [like, like];
   });
+  // Recently logged first, then your own foods and recipes, then other saved foods.
   const rows = await db.all<FoodRow>(
-    `SELECT * FROM foods WHERE archived = 0 AND ${where.join(' AND ')}
-      ORDER BY source = 'user' DESC, updated_at DESC LIMIT ?`,
+    `SELECT f.* FROM foods f
+       LEFT JOIN (SELECT food_id, MAX(created_at) AS last_logged FROM log_entries GROUP BY food_id) l
+         ON l.food_id = f.id
+      WHERE f.archived = 0 AND ${where.join(' AND ')}
+      ORDER BY l.last_logged IS NULL, l.last_logged DESC, f.source IN ('user', 'recipe') DESC, f.updated_at DESC
+      LIMIT ?`,
     [...params, limit],
   );
   return Promise.all(rows.map((r) => hydrate(db, r)));

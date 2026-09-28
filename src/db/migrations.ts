@@ -199,6 +199,23 @@ export const MIGRATIONS: readonly Migration[] = [
       }
     },
   },
+  {
+    // Portions on log entries (for editing "2 × 1 cup") and recipe metadata.
+    version: 2,
+    async up(tx) {
+      await tx.exec(`
+        ALTER TABLE log_entries ADD COLUMN unit TEXT NOT NULL DEFAULT 'g' CHECK (unit IN ('g', 'ml'));
+        ALTER TABLE log_entries ADD COLUMN quantity REAL;
+        ALTER TABLE log_entries ADD COLUMN serving_amount REAL;
+        CREATE INDEX log_entries_food ON log_entries(food_id);
+        CREATE TABLE recipes (
+          food_id INTEGER PRIMARY KEY REFERENCES foods(id) ON DELETE CASCADE,
+          cooked_weight REAL CHECK (cooked_weight > 0),
+          servings REAL CHECK (servings > 0)
+        );
+      `);
+    },
+  },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;

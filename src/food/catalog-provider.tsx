@@ -13,10 +13,13 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useDatabase, wrapExpoDatabase } from '@/db/database-provider';
 import type { SqlDriver } from '@/db/driver';
 
+import { getSecret, setSecret } from '@/features/secrets';
+
 import type { Catalog } from './catalog';
 import cnfManifest from './cnf-manifest.json';
 import { createOffFetcher } from './off-api';
 import { referenceMeta } from './reference-db';
+import { createUsdaClient } from './usda';
 
 const CNF_DB = 'cnf.db';
 const OFF_DB = 'off-ca.db';
@@ -49,6 +52,9 @@ interface CatalogContextValue {
   downloadOffCa(): Promise<void>;
   removeOffCa(): Promise<void>;
   fetchOffCaManifest(): Promise<OffCaManifest>;
+  /** True once the user has saved a USDA API key. */
+  hasUsdaKey: boolean;
+  saveUsdaKey(key: string | null): Promise<void>;
 }
 
 const CatalogContext = createContext<CatalogContextValue | null>(null);
@@ -82,11 +88,21 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
   const [off, setOff] = useState<OpenOffCa | null>(null);
   const [progress, setProgress] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [usdaKey, setUsdaKey] = useState<string | null>(null);
   const offRef = useRef<OpenOffCa | null>(null);
 
   useEffect(() => {
     offRef.current = off;
   }, [off]);
+
+  useEffect(() => {
+    getSecret('usda_api_key').then(setUsdaKey, () => setUsdaKey(null));
+  }, []);
+
+  const saveUsdaKey = useCallback(async (key: string | null) => {
+    await setSecret('usda_api_key', key);
+    setUsdaKey(key?.trim() || null);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -156,13 +172,25 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
       cnf: cnf ? wrapExpoDatabase(cnf) : null,
       offCa: off ? wrapExpoDatabase(off.db) : null,
       fetchOffProduct: createOffFetcher({ appVersion: Constants.expoConfig?.version ?? '0' }),
+      usda: usdaKey ? createUsdaClient({ apiKey: usdaKey }) : null,
     }),
-    [main, cnf, off],
+    [main, cnf, off, usdaKey],
   );
 
   const value = useMemo<CatalogContextValue>(
-    () => ({ catalog, cnfFoods, offCa: off?.info ?? null, progress, error, downloadOffCa, removeOffCa, fetchOffCaManifest }),
-    [catalog, cnfFoods, off, progress, error, downloadOffCa, removeOffCa, fetchOffCaManifest],
+    () => ({
+      catalog,
+      cnfFoods,
+      offCa: off?.info ?? null,
+      progress,
+      error,
+      downloadOffCa,
+      removeOffCa,
+      fetchOffCaManifest,
+      hasUsdaKey: usdaKey !== null,
+      saveUsdaKey,
+    }),
+    [catalog, cnfFoods, off, progress, error, downloadOffCa, removeOffCa, fetchOffCaManifest, usdaKey, saveUsdaKey],
   );
 
   return <CatalogContext.Provider value={value}>{children}</CatalogContext.Provider>;
