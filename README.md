@@ -7,9 +7,11 @@ A personal, local-first nutrition coach for iPhone. It is being built to:
 - use lifting data from Hevy (via its official API) as a training signal,
 - adjust calorie and macro targets weekly toward the user's goal.
 
-> **Status:** Phase 3: food logging (meals, servings, your own foods, recipes,
-> day status, USDA fallback) on the Canadian food library and the tested
-> calculation engine ([how it works](docs/ENGINE.md)). Micronutrient targets come next.
+> **Status:** Phase 4: micronutrient targets (Health Canada DRIs by age and sex,
+> % Daily Value, data-coverage flags, 7-day "consistently low" nudges with
+> Canadian food sources, marked estimates) on top of food logging, the Canadian
+> food library and the tested calculation engine ([how it works](docs/ENGINE.md)).
+> Weight and steps come next.
 >
 > Rebuild the bundled food data with `npm run data:cnf`. The Open Food Facts
 > Canada file is built by the monthly "Open Food Facts Canada data" workflow.
