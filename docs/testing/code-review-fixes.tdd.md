@@ -58,6 +58,25 @@ below come from the review findings.
 | 12 | Sat fat %DV = (sat + trans) / 20 g | nutrition.test.ts: uses saturated + trans fat… | unit | PASS |
 | 13 | Migration v3 values equal the current reference table | nutrition.test.ts: match the values frozen into migration v3 | unit | PASS |
 
+## Addendum: Open Food Facts export format change
+
+Re-running the data build after #5 exposed a new upstream problem.
+- The export dropped the `brands` column ("Export is missing column brands").
+- Text fields now contain unquoted line breaks, so rows span lines.
+
+| Stage | Evidence |
+|---|---|
+| RED (`8460361`) | `scripts/data/off-export.test.ts`: `Cannot find module './off-export'` |
+| GREEN (`de18133`) | `off-export.test.ts` 6 passed; full suite 181 passed |
+| Live check | Local build against today's export read 136,923 rows; 0.8% of fragments unrecoverable |
+| Published | `off-ca` release, 2026-10-19: 109,047 products, 40.96 MB, manifest includes `md5` |
+
+Guarantees:
+- split rows are rejoined;
+- fragments that overshoot the column count are dropped, and the next record still reads;
+- the brand comes from `brands`, then `brand_owner`, then the slug ("president-s-choice" → "President's Choice");
+- the build fails loudly if it reads zero rows.
+
 ## Coverage and known gaps
 
 - Screens (#9, #12 and the wiring for #4–#6) are checked by typecheck and lint, not by
