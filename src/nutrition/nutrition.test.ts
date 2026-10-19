@@ -1,4 +1,4 @@
-import { migrate } from '@/db/migrations';
+import { migrate, MIGRATION_V3_DAILY_VALUES } from '@/db/migrations';
 import { NUTRIENTS } from '@/db/nutrient-catalog';
 import { openMemoryDriver, type TestDriver } from '@/db/testing/node-sqlite-driver';
 import type { Profile } from '@/engine/energy';
@@ -10,7 +10,7 @@ import { loadProfile, profileProblems, saveProfile } from '@/profile/profile-sto
 
 import { bestSources, entriesByDate, personalTargets, setOverride } from './nutrition-store';
 import { DAILY_VALUES, DRI } from './reference-values';
-import { averageReport, consistentlyLow, coverage, dayReport } from './report';
+import { averageReport, consistentlyLow, coverage, dayReport, lineNotes } from './report';
 import { ageBand, applyOverrides, referenceTargets } from './targets';
 
 const TODAY = '2026-09-28';
@@ -38,6 +38,10 @@ describe('reference values', () => {
   it('only uses nutrients Fuel tracks', () => {
     const ids = new Set(NUTRIENTS.map((n) => n.id));
     for (const id of [...Object.keys(DAILY_VALUES), ...Object.keys(DRI)]) expect(ids).toContain(id);
+  });
+
+  it('match the values frozen into migration v3 (change them with a new migration)', () => {
+    expect(MIGRATION_V3_DAILY_VALUES).toEqual(DAILY_VALUES);
   });
 
   it('are stored in the database by migration', async () => {
@@ -116,6 +120,20 @@ describe('reports', () => {
     expect(byId.vitamin_d_mcg).toMatchObject({ amount: 0, flag: 'unknown', coverage: 0 });
     expect(byId.sat_fat_g.flag).toBe('none');
     expect(byId.energy_kcal).toBeUndefined();
+  });
+
+  it('uses saturated + trans fat for the saturated fat % Daily Value, as labels do', () => {
+    const byId = Object.fromEntries(
+      dayReport([{ nutrients: { energy_kcal: 500, sat_fat_g: 10, trans_fat_g: 2 } }], targets).map((l) => [l.nutrient.id, l]),
+    );
+    expect(byId.sat_fat_g.ofDailyValue).toBeCloseTo(0.6, 10);
+  });
+
+  it('describes a row in plain words', () => {
+    const byId = Object.fromEntries(dayReport([oats, bar], targets).map((l) => [l.nutrient.id, l]));
+    expect(lineNotes(byId.iron_mg)).toEqual(['22% DV', 'data for 75% of calories']);
+    expect(lineNotes(byId.sodium_mg)).toEqual(['109% DV', 'above the chronic-disease risk level']);
+    expect(lineNotes(byId.vitamin_d_mcg)).toEqual(['0% DV', 'not enough data']);
   });
 
   it('averages days and lists nutrients that stay low', () => {

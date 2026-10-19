@@ -2,7 +2,7 @@ import { migrate } from '@/db/migrations';
 import { openMemoryDriver, type TestDriver } from '@/db/testing/node-sqlite-driver';
 
 import { getFood, saveFood } from './food-store';
-import { labelToFoodRecord, labelValues, parseDecimal } from './label';
+import { keepEstimates, labelToFoodRecord, labelValues, parseDecimal } from './label';
 import { combineIngredients, loadRecipe, saveRecipe } from './recipe';
 import type { FoodRecord } from './types';
 
@@ -49,6 +49,38 @@ describe('labelToFoodRecord', () => {
     expect(() => labelToFoodRecord({ ...input, values: { protein_g: 1 } }, 'x')).toThrow('Calories');
     expect(() => labelToFoodRecord({ ...input, values: { energy_kcal: NaN } }, 'x')).toThrow('Calories');
     expect(() => labelToFoodRecord({ ...input, barcode: '12345' }, 'x')).toThrow('barcode');
+  });
+});
+
+describe('editing a food that has estimates', () => {
+  const label = {
+    name: 'Yogurt',
+    basis: 'g' as const,
+    servingLabel: '100 g',
+    servingAmount: 100,
+    values: { energy_kcal: 60, calcium_mg: 120 },
+  };
+  const withEstimates: FoodRecord = {
+    ...labelToFoodRecord(label, 'user-1'),
+    nutrients: { energy_kcal: 60, calcium_mg: 120, vitamin_d_mcg: 1.2, potassium_mg: 150 },
+    estimated: ['potassium_mg', 'vitamin_d_mcg'],
+  };
+
+  it('shows only label values in the editor', () => {
+    expect(labelValues(withEstimates, 100)).toEqual({ energy_kcal: 60, calcium_mg: 120 });
+  });
+
+  it('keeps estimates the user did not replace, and drops ones they entered', () => {
+    const edited = labelToFoodRecord({ ...label, values: { energy_kcal: 62, calcium_mg: 120, potassium_mg: 160 } }, 'user-1');
+    const merged = keepEstimates(edited, withEstimates);
+    expect(merged.nutrients).toEqual({ energy_kcal: 62, calcium_mg: 120, potassium_mg: 160, vitamin_d_mcg: 1.2 });
+    expect(merged.estimated).toEqual(['vitamin_d_mcg']);
+    expect(merged.microCompleteness).toBeCloseTo(3 / 12, 2);
+  });
+
+  it('is a no-op for foods without estimates', () => {
+    const edited = labelToFoodRecord(label, 'user-1');
+    expect(keepEstimates(edited, labelToFoodRecord(label, 'user-1'))).toEqual(edited);
   });
 });
 

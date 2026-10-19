@@ -181,6 +181,22 @@ describe('catalog', () => {
     expect(await ensureSaved(c, { origin: 'mine', food: food({}), foodId: 42 })).toBe(42);
   });
 
+  it('lists a food you have saved once, as yours', async () => {
+    const main = await mainDb();
+    const oats = food({ name: 'Oats, rolled, dry' });
+    await saveFood(main, oats);
+    const c: Catalog = { main, cnf: await referenceDb([oats]) };
+    expect((await searchFoods(c, 'oats')).map((h) => h.origin)).toEqual(['mine']);
+  });
+
+  it('never overwrites a saved food when its reference copy is picked', async () => {
+    const main = await mainDb();
+    const mine = { ...cereal, nutrients: { energy_kcal: 100, iron_mg: 2 }, estimated: ['iron_mg'] };
+    const id = await saveFood(main, mine);
+    expect(await ensureSaved({ main }, { origin: 'off-ca', food: cereal })).toBe(id);
+    expect(await getFood(main, id)).toMatchObject({ nutrients: { energy_kcal: 100, iron_mg: 2 }, estimated: ['iron_mg'] });
+  });
+
   it('updates a cached food in place when saved again', async () => {
     const main = await mainDb();
     const id1 = await saveFood(main, cereal);

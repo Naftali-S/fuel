@@ -85,7 +85,9 @@ describe('entries', () => {
 });
 
 describe('day status', () => {
-  const log = (date: string) => addEntry(db, { date, meal: 'lunch', foodId: oatsId, portion: halfCup, quantity: 1 });
+  // 7 × ½ cup of oats ≈ 1090 kcal: a plausibly complete day. 1 × ½ cup ≈ 156 kcal: a snack.
+  const log = (date: string, quantity = 7) =>
+    addEntry(db, { date, meal: 'lunch', foodId: oatsId, portion: halfCup, quantity });
 
   it('defaults past logged days to complete, today to partial, empty days to unlogged', async () => {
     await log('2026-09-27');
@@ -93,6 +95,13 @@ describe('day status', () => {
     expect(await dayStatus(db, '2026-09-27', '2026-09-28')).toEqual({ status: 'complete', explicit: false });
     expect(await dayStatus(db, '2026-09-28', '2026-09-28')).toEqual({ status: 'partial', explicit: false });
     expect(await dayStatus(db, '2026-09-26', '2026-09-28')).toEqual({ status: 'unlogged', explicit: false });
+  });
+
+  it('treats a past day with too little logged as partly logged, not complete', async () => {
+    await log('2026-09-27', 1);
+    expect(await dayStatus(db, '2026-09-27', '2026-09-28')).toEqual({ status: 'partial', explicit: false });
+    await setDayStatus(db, '2026-09-27', 'complete');
+    expect(await dayStatus(db, '2026-09-27', '2026-09-28')).toEqual({ status: 'complete', explicit: true });
   });
 
   it('lets the user override and clear the status', async () => {
@@ -103,16 +112,18 @@ describe('day status', () => {
   });
 
   it('feeds the engine one row per day with energy and status', async () => {
+    await log('2026-09-24', 1);
     await log('2026-09-25');
     await log('2026-09-27');
     await log('2026-09-28');
     await setDayStatus(db, '2026-09-27', 'partial');
-    const days = await intakeDays(db, '2026-09-25', '2026-09-28', '2026-09-28');
+    const days = await intakeDays(db, '2026-09-24', '2026-09-28', '2026-09-28');
     expect(days.map((d) => [d.date, d.status, d.kcal === null ? null : Math.round(d.kcal)])).toEqual([
-      ['2026-09-25', 'complete', 156],
+      ['2026-09-24', 'partial', 156],
+      ['2026-09-25', 'complete', 1089],
       ['2026-09-26', 'unlogged', null],
-      ['2026-09-27', 'partial', 156],
-      ['2026-09-28', 'partial', 156],
+      ['2026-09-27', 'partial', 1089],
+      ['2026-09-28', 'partial', 1089],
     ]);
   });
 });
