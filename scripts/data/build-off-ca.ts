@@ -20,6 +20,7 @@ import { openNodeDriver } from '../../src/db/testing/node-sqlite-driver';
 import { OFF_NUTRIENTS } from '../../src/food/nutrient-mapping';
 import { offToFoodRecord } from '../../src/food/off-product';
 import { createReferenceSchema, finalizeReference, insertReferenceFood } from '../../src/food/reference-db';
+import { brandFromExport, createRecordJoiner } from './off-export';
 
 const EXPORT_URL = 'https://static.openfoodfacts.org/data/en.openfoodfacts.org.products.csv.gz';
 const USER_AGENT = 'Fuel-data-build/1.0 (https://github.com/Naftali-S/fuel)';
@@ -34,7 +35,9 @@ const { values: args } = parseArgs({
   },
 });
 
-const TEXT_COLUMNS = ['code', 'product_name', 'brands', 'countries_tags', 'serving_size', 'serving_quantity', 'unique_scans_n'];
+/** Columns the build can't do without. Everything else is optional, as the export's shape changes. */
+const REQUIRED_COLUMNS = ['code', 'product_name', 'countries_tags'];
+const BRAND_COLUMNS = ['brands', 'brands_en', 'brands_tags', 'brand_owner'] as const;
 const NUTRIENT_COLUMNS = [
   'energy-kcal_100g',
   'energy-kj_100g',
@@ -61,7 +64,6 @@ async function main() {
   await createReferenceSchema(db);
 
   const lines = createInterface({ input: await openInput(), crlfDelay: Infinity });
-  let width = 0; // header column count; 0 until the header is read
   let col: Record<string, number> = {};
   const stats = { rows: 0, canadian: 0, kept: 0, malformed: 0, rejected: 0, duplicates: 0 };
   let batch: Parameters<typeof insertReferenceFood>[1][] = [];
@@ -82,46 +84,48 @@ async function main() {
     boosts = [];
   };
 
+  let joiner: ReturnType<typeof createRecordJoiner> | null = null;
+  const get = (f: string[], name: string) => (col[name] === undefined ? undefined : f[col[name]]);
+
   for await (const line of lines) {
-    if (width === 0) {
+    if (!joiner) {
       const header = line.split('\t');
-      width = header.length;
       col = Object.fromEntries(header.map((h, i) => [h, i]));
-      for (const c of TEXT_COLUMNS) if (col[c] === undefined) throw new Error(`Export is missing column ${c}`);
+      for (const c of REQUIRED_COLUMNS) if (col[c] === undefined) throw new Error(`Export is missing column ${c}`);
+      joiner = createRecordJoiner(header.length, () => stats.malformed++);
       continue;
     }
+    const f = joiner.push(line);
+    if (!f) continue;
     stats.rows++;
-    if (!line.includes('en:canada')) continue;
-    const f = line.split('\t');
-    if (f.length !== width) {
-      stats.malformed++;
-      continue;
-    }
     if (!f[col.countries_tags].split(',').includes('en:canada')) continue;
     stats.canadian++;
 
     const nutriments: Record<string, string> = {};
     for (const c of NUTRIENT_COLUMNS) if (col[c] !== undefined) nutriments[c] = f[col[c]];
+    const brand = brandFromExport(Object.fromEntries(BRAND_COLUMNS.map((c) => [c, get(f, c)])));
     const food = offToFoodRecord({
       code: f[col.code],
       product_name: f[col.product_name],
-      brands: f[col.brands],
+      brands: brand,
       countries_tags: f[col.countries_tags],
-      serving_size: f[col.serving_size],
-      serving_quantity: f[col.serving_quantity],
+      serving_size: get(f, 'serving_size'),
+      serving_quantity: get(f, 'serving_quantity'),
       nutriments,
     });
     if (!food) {
       stats.rejected++;
       continue;
     }
-    const scans = Number(f[col.unique_scans_n]) || 0;
+    const scans = Number(get(f, 'unique_scans_n')) || 0;
     batch.push(food);
     boosts.push(0.5 * Math.log10(1 + scans));
     if (batch.length >= BATCH) await flush();
     if (stats.kept + batch.length >= limit) break;
   }
+  joiner?.flush();
   if (batch.length) await flush();
+  if (stats.rows === 0) throw new Error('No products were read from the export; its format may have changed.');
 
   const version = new Date().toISOString().slice(0, 10);
   await finalizeReference(db, {
