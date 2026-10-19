@@ -7,7 +7,7 @@
 import type { SqlDriver } from '@/db/driver';
 import { normalizeBarcode, type NormalizedBarcode, type ScannedSymbology } from '@/lib/barcode';
 
-import { foodByBarcode, saveFood, searchMyFoods } from './food-store';
+import { findFoodId, foodByBarcode, saveFood, searchMyFoods } from './food-store';
 import { referenceByBarcode, searchReference } from './reference-db';
 import type { FoodRecord } from './types';
 import type { UsdaClient } from './usda';
@@ -37,10 +37,17 @@ export async function searchUsda(c: Catalog, query: string): Promise<FoodHit[]> 
   return (await c.usda.search(query.trim())).map((food) => ({ origin: 'usda' as const, food }));
 }
 
-/** Stores a hit in the user's database (if it isn't already) so it can be logged. */
+/**
+ * Stores a hit in the user's database so it can be logged. A copy that is
+ * already stored is returned as is: it may carry the user's estimates or a
+ * newer version, which a reference result must never overwrite.
+ */
 export async function ensureSaved(c: Catalog, hit: FoodHit): Promise<number> {
-  return hit.foodId ?? saveFood(c.main, hit.food);
+  if (hit.foodId !== undefined) return hit.foodId;
+  return (await findFoodId(c.main, hit.food.source, hit.food.sourceId)) ?? saveFood(c.main, hit.food);
 }
+
+const foodKey = (f: FoodRecord) => `${f.source}:${f.sourceId}`;
 
 export async function searchFoods(c: Catalog, query: string, limit = 40): Promise<FoodHit[]> {
   const [mine, cnf, off] = await Promise.all([
@@ -48,10 +55,12 @@ export async function searchFoods(c: Catalog, query: string, limit = 40): Promis
     c.cnf ? searchReference(c.cnf, query, 20) : Promise.resolve([]),
     c.offCa ? searchReference(c.offCa, query, 20) : Promise.resolve([]),
   ]);
+  // A food you've saved is listed once, as yours (with your estimates and edits).
+  const saved = new Set(mine.map(foodKey));
   const hits: FoodHit[] = [
     ...mine.map((f) => ({ origin: 'mine' as const, food: f, foodId: f.id })),
-    ...cnf.map((f) => ({ origin: 'cnf' as const, food: f })),
-    ...off.map((f) => ({ origin: 'off-ca' as const, food: f })),
+    ...cnf.filter((f) => !saved.has(foodKey(f))).map((f) => ({ origin: 'cnf' as const, food: f })),
+    ...off.filter((f) => !saved.has(foodKey(f))).map((f) => ({ origin: 'off-ca' as const, food: f })),
   ];
   return hits.slice(0, limit);
 }

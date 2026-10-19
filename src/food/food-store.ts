@@ -115,6 +115,12 @@ async function hydrate(db: SqlDriver, row: FoodRow): Promise<StoredFood> {
   };
 }
 
+/** Id of a stored copy of a food from a given source, if there is one. */
+export async function findFoodId(db: SqlDriver, source: FoodSource, sourceId: string): Promise<number | null> {
+  const row = await db.get<{ id: number }>('SELECT id FROM foods WHERE source = ? AND source_id = ?', [source, sourceId]);
+  return row?.id ?? null;
+}
+
 export async function getFood(db: SqlDriver, id: number): Promise<StoredFood | null> {
   const row = await db.get<FoodRow>('SELECT * FROM foods WHERE id = ?', [id]);
   return row ? hydrate(db, row) : null;

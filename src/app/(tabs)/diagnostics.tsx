@@ -64,7 +64,7 @@ function UsdaCard() {
 }
 
 function FoodLibraryCard() {
-  const { cnfFoods, offCa, progress, error, downloadOffCa, removeOffCa, fetchOffCaManifest } = useCatalog();
+  const { cnfFoods, offCa, offCaUpdate, progress, error, downloadOffCa, removeOffCa, fetchOffCaManifest } = useCatalog();
 
   const confirmDownload = async () => {
     try {
@@ -103,6 +103,13 @@ function FoodLibraryCard() {
       {progress !== null && <ThemedText type="small">Downloading… {Math.round(progress * 100)}%</ThemedText>}
       {error && <ThemedText type="small">{error}</ThemedText>}
       <Button label="Search foods" onPress={() => router.push('/add-food')} />
+      {offCa && offCaUpdate && (
+        <Button
+          label={progress === null ? `Update Canadian products (${offCaUpdate})` : 'Downloading…'}
+          disabled={progress !== null}
+          onPress={confirmDownload}
+        />
+      )}
       {offCa ? (
         <Button label="Remove Canadian products" disabled={progress !== null} onPress={confirmRemove} />
       ) : (

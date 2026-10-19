@@ -52,16 +52,38 @@ function flagFor(amount: number, t: NutrientTarget, cov: number): NutrientFlag {
   return 'ok';
 }
 
-function line(nutrient: NutrientDef, amount: number, t: NutrientTarget, cov: number): NutrientLine {
+/** The saturated fat Daily Value on Canadian labels covers saturated + trans fat. */
+const DV_INCLUDES: Readonly<Record<string, readonly string[]>> = { sat_fat_g: ['trans_fat_g'] };
+
+function line(
+  nutrient: NutrientDef,
+  amount: number,
+  t: NutrientTarget,
+  cov: number,
+  dvAmount = amount,
+): NutrientLine {
   return {
     nutrient,
     amount,
     target: t,
     ofTarget: t.target ? amount / t.target : null,
-    ofDailyValue: t.dailyValue ? amount / t.dailyValue : null,
+    ofDailyValue: t.dailyValue ? dvAmount / t.dailyValue : null,
     coverage: cov,
     flag: flagFor(amount, t, cov),
   };
+}
+
+function report(
+  entries: readonly NutrientEntry[],
+  days: number,
+  targets: Readonly<Record<string, NutrientTarget>>,
+): NutrientLine[] {
+  const total = (id: string) => entries.reduce((s, e) => s + (e.nutrients[id] ?? 0), 0) / days;
+  return NUTRIENTS.filter((n) => !EXCLUDED.has(n.id)).map((n) => {
+    const amount = total(n.id);
+    const dvAmount = (DV_INCLUDES[n.id] ?? []).reduce((s, id) => s + total(id), amount);
+    return line(n, amount, targets[n.id] ?? {}, coverage(entries, n.id), dvAmount);
+  });
 }
 
 /** One day's totals against targets, for every tracked micronutrient. */
@@ -69,10 +91,7 @@ export function dayReport(
   entries: readonly NutrientEntry[],
   targets: Readonly<Record<string, NutrientTarget>>,
 ): NutrientLine[] {
-  return NUTRIENTS.filter((n) => !EXCLUDED.has(n.id)).map((n) => {
-    const amount = entries.reduce((s, e) => s + (e.nutrients[n.id] ?? 0), 0);
-    return line(n, amount, targets[n.id] ?? {}, coverage(entries, n.id));
-  });
+  return report(entries, 1, targets);
 }
 
 /** Average daily intake over several days (each day a list of entries). */
@@ -80,12 +99,18 @@ export function averageReport(
   days: readonly (readonly NutrientEntry[])[],
   targets: Readonly<Record<string, NutrientTarget>>,
 ): NutrientLine[] {
-  const all = days.flat();
-  const n = Math.max(1, days.length);
-  return NUTRIENTS.filter((d) => !EXCLUDED.has(d.id)).map((d) => {
-    const amount = all.reduce((s, e) => s + (e.nutrients[d.id] ?? 0), 0) / n;
-    return line(d, amount, targets[d.id] ?? {}, coverage(all, d.id));
-  });
+  return report(days.flat(), Math.max(1, days.length), targets);
+}
+
+/** Short plain-language notes shown under a nutrient's bar. */
+export function lineNotes(l: NutrientLine): string[] {
+  const notes: string[] = [];
+  if (l.ofDailyValue !== null) notes.push(`${Math.round(l.ofDailyValue * 100)}% DV`);
+  if (l.coverage < 0.95 && l.amount > 0) notes.push(`data for ${Math.round(l.coverage * 100)}% of calories`);
+  if (l.flag === 'unknown') notes.push('not enough data');
+  if (l.flag === 'high') notes.push(l.target.upperKind === 'CDRR' ? 'above the chronic-disease risk level' : 'above the upper limit');
+  if (l.target.source === 'user') notes.push('your target');
+  return notes;
 }
 
 /** Nutrients reliably below target, lowest first (for "consistently low" nudges). */

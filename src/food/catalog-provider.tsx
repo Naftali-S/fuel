@@ -19,17 +19,21 @@ import type { Catalog } from './catalog';
 import cnfManifest from './cnf-manifest.json';
 import { createOffFetcher } from './off-api';
 import { referenceMeta } from './reference-db';
+import { isNewerVersion, shouldCheckForUpdate, verifyDownload } from './reference-updates';
 import { createUsdaClient } from './usda';
 
 const CNF_DB = 'cnf.db';
 const OFF_DB = 'off-ca.db';
 const OFF_RELEASE = 'https://github.com/Naftali-S/fuel/releases/download/off-ca/';
 const CNF_SETTING = 'ref.cnf.sha256';
+const OFF_CHECKED_SETTING = 'ref.offca.checked';
 
 export interface OffCaManifest {
   version: string;
   foods: number;
   bytes: number;
+  /** Added in later builds; older manifests are verified by size only. */
+  md5?: string;
 }
 
 export interface OffCaInfo {
@@ -54,6 +58,8 @@ interface CatalogContextValue {
   fetchOffCaManifest(): Promise<OffCaManifest>;
   /** True once the user has saved a USDA API key. */
   hasUsdaKey: boolean;
+  /** Version of a newer Canadian products file, when one is available. */
+  offCaUpdate: string | null;
   saveUsdaKey(key: string | null): Promise<void>;
 }
 
@@ -128,6 +134,28 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
     return (await res.json()) as OffCaManifest;
   }, []);
 
+  // Weekly, quietly look for a newer monthly build of the Canadian products file.
+  const [offCaUpdate, setOffCaUpdate] = useState<string | null>(null);
+  const installedVersion = off?.info.version ?? null;
+  useEffect(() => {
+    if (!installedVersion) return;
+    let cancelled = false;
+    (async () => {
+      const checked = await main.get<{ value: string }>('SELECT value FROM settings WHERE key = ?', [OFF_CHECKED_SETTING]);
+      const last = checked ? (JSON.parse(checked.value) as string) : null;
+      if (!shouldCheckForUpdate(last, new Date())) return;
+      const manifest = await fetchOffCaManifest();
+      await main.run('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', [
+        OFF_CHECKED_SETTING,
+        JSON.stringify(new Date().toISOString()),
+      ]);
+      if (!cancelled && isNewerVersion(installedVersion, manifest.version)) setOffCaUpdate(manifest.version);
+    })().catch(() => undefined); // offline or no release yet: try again next launch
+    return () => {
+      cancelled = true;
+    };
+  }, [main, installedVersion, fetchOffCaManifest]);
+
   const downloadOffCa = useCallback(async () => {
     setError(null);
     setProgress(0);
@@ -139,7 +167,9 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
         onProgress: ({ bytesWritten }) => setProgress(Math.min(1, bytesWritten / manifest.bytes)),
       });
       const file = await task.downloadAsync();
-      if (!file || file.size !== manifest.bytes) throw new Error('The download was incomplete. Try again.');
+      if (!file) throw new Error('The download was incomplete. Try again.');
+      const problem = verifyDownload(manifest, { size: file.size, md5: manifest.md5 ? file.md5 : null });
+      if (problem) throw new Error(problem);
 
       await offRef.current?.db.closeAsync();
       setOff(null);
@@ -189,8 +219,22 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
       fetchOffCaManifest,
       hasUsdaKey: usdaKey !== null,
       saveUsdaKey,
+      offCaUpdate: offCaUpdate && offCaUpdate !== installedVersion ? offCaUpdate : null,
     }),
-    [catalog, cnfFoods, off, progress, error, downloadOffCa, removeOffCa, fetchOffCaManifest, usdaKey, saveUsdaKey],
+    [
+      catalog,
+      cnfFoods,
+      off,
+      progress,
+      error,
+      downloadOffCa,
+      removeOffCa,
+      fetchOffCaManifest,
+      usdaKey,
+      saveUsdaKey,
+      offCaUpdate,
+      installedVersion,
+    ],
   );
 
   return <CatalogContext.Provider value={value}>{children}</CatalogContext.Provider>;

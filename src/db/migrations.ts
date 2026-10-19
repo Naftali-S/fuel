@@ -7,10 +7,46 @@
  * ISO 8601 UTC strings, food nutrient amounts are per 100 g (or 100 mL when
  * `basis` = 'ml'), JSON columns hold JSON text.
  */
-import { DAILY_VALUES } from '@/nutrition/reference-values';
-
 import type { SqlDriver } from './driver';
 import { NUTRIENTS } from './nutrient-catalog';
+
+/**
+ * Daily Values as shipped in migration v3, frozen so the migration never
+ * changes meaning. If Health Canada's table changes, update
+ * src/nutrition/reference-values.ts and add a new migration.
+ */
+export const MIGRATION_V3_DAILY_VALUES: Readonly<Record<string, number>> = {
+  fat_g: 75,
+  sat_fat_g: 20,
+  fibre_g: 28,
+  sugars_g: 100,
+  cholesterol_mg: 300,
+  sodium_mg: 2300,
+  potassium_mg: 3400,
+  calcium_mg: 1300,
+  iron_mg: 18,
+  vitamin_a_mcg: 900,
+  vitamin_c_mg: 90,
+  vitamin_d_mcg: 20,
+  vitamin_e_mg: 15,
+  vitamin_k_mcg: 120,
+  thiamin_mg: 1.2,
+  riboflavin_mg: 1.3,
+  niacin_mg: 16,
+  vitamin_b6_mg: 1.7,
+  folate_mcg: 400,
+  vitamin_b12_mcg: 2.4,
+  choline_mg: 550,
+  biotin_mcg: 30,
+  pantothenic_mg: 5,
+  phosphorus_mg: 1250,
+  iodide_mcg: 150,
+  magnesium_mg: 420,
+  zinc_mg: 11,
+  selenium_mcg: 55,
+  copper_mg: 0.9,
+  manganese_mg: 2.3,
+};
 
 export interface Migration {
   version: number;
@@ -222,7 +258,7 @@ export const MIGRATIONS: readonly Migration[] = [
     // Health Canada Daily Values (verified against the official 2022 table).
     version: 3,
     async up(tx) {
-      for (const [id, dv] of Object.entries(DAILY_VALUES)) {
+      for (const [id, dv] of Object.entries(MIGRATION_V3_DAILY_VALUES)) {
         await tx.run('UPDATE nutrients SET daily_value = ? WHERE id = ?', [dv, id]);
       }
     },

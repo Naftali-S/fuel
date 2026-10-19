@@ -171,12 +171,21 @@ export async function setDayStatus(db: SqlDriver, date: IsoDate, status: DayStat
 }
 
 /**
- * A day's status: the user's explicit choice if any; otherwise past days
- * with entries count as complete, today as partial, and empty days as unlogged.
+ * Below this, a past day is assumed to be only partly logged (a snack, not a
+ * day's eating), so it can't drag the expenditure estimate down. Deliberately
+ * low days can still be marked complete or fasting by the user.
  */
-export function defaultStatus(date: IsoDate, today: IsoDate, hasEntries: boolean): DayStatus {
-  if (!hasEntries) return 'unlogged';
-  return date < today ? 'complete' : 'partial';
+export const MIN_COMPLETE_KCAL = 1000;
+
+/**
+ * A day's status: the user's explicit choice if any; otherwise past days
+ * with at least MIN_COMPLETE_KCAL logged count as complete, other logged days
+ * (including today) as partial, and days without entries as unlogged.
+ * `loggedKcal` is null when the day has no entries.
+ */
+export function defaultStatus(date: IsoDate, today: IsoDate, loggedKcal: number | null): DayStatus {
+  if (loggedKcal === null) return 'unlogged';
+  return date < today && loggedKcal >= MIN_COMPLETE_KCAL ? 'complete' : 'partial';
 }
 
 export async function dayStatus(
@@ -186,8 +195,11 @@ export async function dayStatus(
 ): Promise<{ status: DayStatus; explicit: boolean }> {
   const row = await db.get<{ status: DayStatus }>('SELECT status FROM day_status WHERE date = ?', [date]);
   if (row) return { status: row.status, explicit: true };
-  const n = await db.get<{ n: number }>('SELECT COUNT(*) AS n FROM log_entries WHERE date = ?', [date]);
-  return { status: defaultStatus(date, today, (n?.n ?? 0) > 0), explicit: false };
+  const t = await db.get<{ n: number; kcal: number | null }>(
+    "SELECT COUNT(*) AS n, SUM(json_extract(nutrients, '$.energy_kcal')) AS kcal FROM log_entries WHERE date = ?",
+    [date],
+  );
+  return { status: defaultStatus(date, today, t && t.n > 0 ? (t.kcal ?? 0) : null), explicit: false };
 }
 
 /** Daily logged energy and status from `from` to `to`, for the expenditure engine. */
@@ -207,7 +219,7 @@ export async function intakeDays(db: SqlDriver, from: IsoDate, to: IsoDate, toda
   for (let i = 0; i <= daysBetween(from, to); i++) {
     const date = addDays(from, i);
     const t = byDate.get(date);
-    const status = statusByDate.get(date) ?? defaultStatus(date, today, (t?.n ?? 0) > 0);
+    const status = statusByDate.get(date) ?? defaultStatus(date, today, t ? (t.kcal ?? 0) : null);
     out.push({ date, kcal: t ? (t.kcal ?? 0) : null, status });
   }
   return out;

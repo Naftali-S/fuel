@@ -85,7 +85,24 @@ export function labelToFoodRecord(input: LabelInput, sourceId: string): FoodReco
   };
 }
 
-/** Per-serving values for editing an existing food. */
-export function labelValues(food: Pick<FoodRecord, 'nutrients'>, servingAmount: number): Record<string, number> {
-  return Object.fromEntries(Object.entries(food.nutrients).map(([id, v]) => [id, sig((v * servingAmount) / 100)]));
+/** Per-serving label values for editing an existing food (estimated values are left out). */
+export function labelValues(food: Pick<FoodRecord, 'nutrients' | 'estimated'>, servingAmount: number): Record<string, number> {
+  const estimated = new Set(food.estimated ?? []);
+  return Object.fromEntries(
+    Object.entries(food.nutrients)
+      .filter(([id]) => !estimated.has(id))
+      .map(([id, v]) => [id, sig((v * servingAmount) / 100)]),
+  );
+}
+
+/**
+ * Carries a food's estimated nutrients over to its edited version, except
+ * the ones the user has now entered from the label themselves.
+ */
+export function keepEstimates(edited: FoodRecord, previous: Pick<FoodRecord, 'nutrients' | 'estimated'>): FoodRecord {
+  const kept = (previous.estimated ?? []).filter((id) => edited.nutrients[id] === undefined && previous.nutrients[id] !== undefined);
+  if (kept.length === 0) return edited;
+  const nutrients = { ...edited.nutrients };
+  for (const id of kept) nutrients[id] = previous.nutrients[id];
+  return { ...edited, nutrients, estimated: [...kept].sort(), microCompleteness: microCompleteness(nutrients) };
 }

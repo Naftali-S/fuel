@@ -8,8 +8,8 @@ import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useDatabase } from '@/db/database-provider';
 import { NUTRIENTS } from '@/db/nutrient-catalog';
-import { getFood, newSourceId, saveFood } from '@/food/food-store';
-import { LABEL_FIELDS, labelToFoodRecord, labelValues, parseDecimal } from '@/food/label';
+import { getFood, newSourceId, saveFood, type StoredFood } from '@/food/food-store';
+import { keepEstimates, LABEL_FIELDS, labelToFoodRecord, labelValues, parseDecimal } from '@/food/label';
 
 const LABEL_SET = new Set<string>(LABEL_FIELDS);
 const EXTRA_FIELDS = NUTRIENTS.filter((n) => !LABEL_SET.has(n.id)).map((n) => n.id);
@@ -19,7 +19,8 @@ export default function FoodEditorScreen() {
   const params = useLocalSearchParams<{ foodId?: string; date?: string; meal?: string; name?: string; barcode?: string }>();
   const db = useDatabase();
   const editingId = params.foodId ? Number(params.foodId) : null;
-  const [sourceId, setSourceId] = useState<string | null>(null);
+  // The food as stored before editing: keeps its id and any estimated nutrients.
+  const [original, setOriginal] = useState<StoredFood | null>(null);
   const [name, setName] = useState(params.name ?? '');
   const [brand, setBrand] = useState('');
   const [barcode, setBarcode] = useState(params.barcode ?? '');
@@ -34,7 +35,7 @@ export default function FoodEditorScreen() {
     getFood(db, editingId).then((f) => {
       if (!f) return;
       const serving = f.servings[0] ?? { label: '', amount: 100 };
-      setSourceId(f.sourceId);
+      setOriginal(f);
       setName(f.name);
       setBrand(f.brand ?? '');
       setBarcode(f.barcodes[0] ?? '');
@@ -42,7 +43,7 @@ export default function FoodEditorScreen() {
       setServingLabel(serving.label);
       setServingText(String(serving.amount));
       setValues(Object.fromEntries(Object.entries(labelValues(f, serving.amount)).map(([k, v]) => [k, String(v)])));
-      setShowMore(Object.keys(f.nutrients).some((k) => !LABEL_SET.has(k)));
+      setShowMore(Object.keys(f.nutrients).some((k) => !LABEL_SET.has(k) && !f.estimated?.includes(k)));
     });
   }, [db, editingId]);
 
@@ -58,10 +59,11 @@ export default function FoodEditorScreen() {
         parsed[id] = v;
       }
       const servingAmount = parseDecimal(servingText) ?? NaN;
-      const record = labelToFoodRecord(
+      const edited = labelToFoodRecord(
         { name, brand, basis, servingLabel, servingAmount, values: parsed, barcode },
-        sourceId ?? newSourceId('user'),
+        original?.sourceId ?? newSourceId('user'),
       );
+      const record = original ? keepEstimates(edited, original) : edited;
       const foodId = await saveFood(db, record);
       if (!editingId && params.date && params.meal) {
         router.replace({ pathname: '/log-food', params: { foodId: String(foodId), date: params.date, meal: params.meal } });
@@ -94,6 +96,12 @@ export default function FoodEditorScreen() {
         <ThemedText type="small" themeColor="textSecondary">
           Copy the Nutrition Facts table exactly as printed, per serving. Leave unknown values blank.
         </ThemedText>
+        {!!original?.estimated?.length && (
+          <ThemedText type="small" themeColor="textSecondary">
+            {original.estimated.length} estimated nutrients aren’t shown here and will be kept, unless you enter that
+            nutrient from the label.
+          </ThemedText>
+        )}
         <Field label="Name" value={name} onChangeText={setName} placeholder="e.g. Greek yogurt, plain" />
         <Field label="Brand (optional)" value={brand} onChangeText={setBrand} />
         <Field label="Barcode (optional)" value={barcode} onChangeText={setBarcode} keyboardType="number-pad" />

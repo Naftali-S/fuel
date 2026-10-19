@@ -1,6 +1,6 @@
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useState } from 'react';
-import { ActionSheetIOS, Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { ActionSheetIOS, Alert, AppState, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { TextButton } from '@/components/form';
 import { ThemedText } from '@/components/themed-text';
@@ -11,6 +11,7 @@ import { NUTRIENTS } from '@/db/nutrient-catalog';
 import { addDays, localIsoDate, type IsoDate } from '@/engine/dates';
 import type { DayStatus } from '@/engine/expenditure';
 import { useTheme } from '@/hooks/use-theme';
+import { dayTitle, entryAmount } from '@/log/format';
 import {
   dayStatus,
   deleteEntry,
@@ -39,26 +40,30 @@ const STATUS_LABEL: Record<DayStatus, string> = {
 const fmt = (x: number | undefined, digits = 0) =>
   x === undefined ? '0' : x.toLocaleString(undefined, { maximumFractionDigits: digits });
 
-function dayTitle(date: IsoDate, today: IsoDate): string {
-  if (date === today) return 'Today';
-  if (date === addDays(today, -1)) return 'Yesterday';
-  if (date === addDays(today, 1)) return 'Tomorrow';
-  return new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
-}
-
-function entryAmount(e: LogEntry): string {
-  const unit = e.unit === 'ml' ? 'mL' : 'g';
-  if (e.quantity !== null && e.servingLabel && !/^100\s*(g|ml)$/i.test(e.servingLabel)) {
-    return `${fmt(e.quantity, 2)} × ${e.servingLabel}`;
-  }
-  return `${fmt(e.amount, 1)} ${unit}`;
+/** Today's date, kept current when the screen regains focus or the app returns to the foreground. */
+function useToday(onNewDay: (previous: IsoDate, now: IsoDate) => void): IsoDate {
+  const [today, setToday] = useState(() => localIsoDate(new Date()));
+  const refresh = useCallback(() => {
+    const now = localIsoDate(new Date());
+    if (now === today) return;
+    onNewDay(today, now);
+    setToday(now);
+  }, [today, onNewDay]);
+  useFocusEffect(refresh);
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (s) => s === 'active' && refresh());
+    return () => sub.remove();
+  }, [refresh]);
+  return today;
 }
 
 export default function TodayScreen() {
   const db = useDatabase();
   const theme = useTheme();
-  const today = localIsoDate(new Date());
-  const [date, setDate] = useState<IsoDate>(today);
+  const [date, setDate] = useState<IsoDate>(() => localIsoDate(new Date()));
+  // If you were looking at "today" when the date changed, follow it to the new day.
+  const followNewDay = useCallback((previous: IsoDate, now: IsoDate) => setDate((d) => (d === previous ? now : d)), []);
+  const today = useToday(followNewDay);
   const [entries, setEntries] = useState<LogEntry[]>([]);
   const [status, setStatus] = useState<{ status: DayStatus; explicit: boolean } | null>(null);
   const [target, setTarget] = useState<Target | null>(null);

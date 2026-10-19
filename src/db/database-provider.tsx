@@ -7,10 +7,23 @@ import { useMemo, type ReactNode } from 'react';
 
 import type { SqlDriver, SqlValue } from './driver';
 import { migrate } from './migrations';
+import { createSerialQueue } from './serial';
 
 export const DATABASE_NAME = 'fuel.db';
 
+// One queue per connection: transactions on the same connection run one at a time.
+const queues = new WeakMap<SQLiteDatabase, ReturnType<typeof createSerialQueue>>();
+function queueFor(db: SQLiteDatabase) {
+  let q = queues.get(db);
+  if (!q) {
+    q = createSerialQueue();
+    queues.set(db, q);
+  }
+  return q;
+}
+
 export function wrapExpoDatabase(db: SQLiteDatabase): SqlDriver {
+  const queue = queueFor(db);
   const driver: SqlDriver = {
     exec: (sql) => db.execAsync(sql),
     run: async (sql, params = []) => {
@@ -21,7 +34,8 @@ export function wrapExpoDatabase(db: SQLiteDatabase): SqlDriver {
     get: (sql, params = []) => db.getFirstAsync(sql, params as SqlValue[]),
     // Same connection (not the exclusive variant, which opens a new one) so the
     // foreign_keys pragma set at startup applies inside transactions too.
-    transaction: (fn) => db.withTransactionAsync(() => fn(driver)),
+    // Queued, so two transactions never overlap on this connection.
+    transaction: (fn) => queue(() => db.withTransactionAsync(() => fn(driver))),
   };
   return driver;
 }

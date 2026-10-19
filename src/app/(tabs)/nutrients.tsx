@@ -13,7 +13,7 @@ import { parseDecimal } from '@/food/label';
 import { useTheme } from '@/hooks/use-theme';
 import { entriesForDate, intakeDays } from '@/log/log-store';
 import { bestSources, entriesByDate, personalTargets, setOverride, type FoodSource } from '@/nutrition/nutrition-store';
-import { averageReport, consistentlyLow, dayReport, type NutrientLine } from '@/nutrition/report';
+import { averageReport, consistentlyLow, dayReport, lineNotes, type NutrientLine } from '@/nutrition/report';
 import { loadProfile } from '@/profile/profile-store';
 
 type Mode = 'today' | 'week';
@@ -55,12 +55,8 @@ function NutrientRow({ line, onPress }: { line: NutrientLine; onPress: () => voi
   const theme = useTheme();
   const { nutrient: n, target: t } = line;
   const fraction = line.ofTarget ?? (t.upper ? line.amount / t.upper : line.ofDailyValue);
-  const notes: string[] = [];
-  if (line.ofDailyValue !== null) notes.push(`${Math.round(line.ofDailyValue * 100)}% DV`);
-  if (line.coverage < 0.95 && line.amount > 0) notes.push(`data for ${Math.round(line.coverage * 100)}% of calories`);
-  if (line.flag === 'unknown') notes.push('not enough data');
-  if (line.flag === 'high') notes.push(t.upperKind === 'CDRR' ? 'above the chronic-disease risk level' : 'above the upper limit');
-  if (t.source === 'user') notes.push('your target');
+  const notes = lineNotes(line);
+  const percent = fraction !== null && fraction !== undefined ? Math.round(fraction * 100) : null;
 
   return (
     <Pressable onPress={onPress} accessibilityRole="button" accessibilityHint="Set your own target" style={styles.row}>
@@ -73,9 +69,13 @@ function NutrientRow({ line, onPress }: { line: NutrientLine; onPress: () => voi
           {t.target ? ` / ${fmt(t.target, n.unit)}` : t.upper ? ` / max ${fmt(t.upper, n.unit)}` : ''}
         </ThemedText>
       </View>
-      {fraction !== null && fraction !== undefined && (
-        <View style={[styles.track, { backgroundColor: theme.backgroundSelected }]}>
-          <View style={[styles.fill, { width: `${Math.min(100, fraction * 100)}%`, backgroundColor: FLAG_COLOR[line.flag] }]} />
+      {percent !== null && (
+        <View
+          accessibilityRole="progressbar"
+          accessibilityLabel={`${n.name}, ${percent}% of ${t.target ? 'target' : t.upper ? 'limit' : 'daily value'}`}
+          accessibilityValue={{ min: 0, max: 100, now: Math.min(100, percent) }}
+          style={[styles.track, { backgroundColor: theme.backgroundSelected }]}>
+          <View style={[styles.fill, { width: `${Math.min(100, percent)}%`, backgroundColor: FLAG_COLOR[line.flag] }]} />
         </View>
       )}
       {notes.length > 0 && (

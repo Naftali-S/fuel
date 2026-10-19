@@ -139,8 +139,11 @@ async function main() {
   db.close();
 
   const bytes = statSync(out).size;
-  const sha256 = createHash('sha256').update(readFileSync(out)).digest('hex');
-  const manifest = { source: 'off', region: 'CA', version, foods: stats.kept, bytes, sha256, license: 'ODbL-1.0' };
+  const data = readFileSync(out);
+  const sha256 = createHash('sha256').update(data).digest('hex');
+  // MD5 is what the phone can compute cheaply (expo-file-system); it guards against damaged downloads.
+  const md5 = createHash('md5').update(data).digest('hex');
+  const manifest = { source: 'off', region: 'CA', version, foods: stats.kept, bytes, sha256, md5, license: 'ODbL-1.0' };
   writeFileSync(resolve(args.manifest!), `${JSON.stringify(manifest, null, 2)}\n`);
   console.log(JSON.stringify({ ...stats, bytes }, null, 2));
 }
